@@ -3,6 +3,7 @@
 
 #define NUM_RUNS 10
 #define TILE_SIZE 16
+#define O3_TILE_SIZE 8
 
 #define CUDA_CHECK(func)                                                     	   \
 	do {                                                                           \
@@ -169,11 +170,76 @@ void gemm_gpu_o2(float* A, float* B, float* C, int M, int N, int K)
 	gemm_gpu_o2_kernel<<<gridSize, blockSize>>>(A, B, C, M, N, K);
 }
 
-__global__ void gemm_gpu_o3_kernel(float* A, float* B, float *C, int M, int N, int K) {
-}
-void gemm_gpu_o3(float* A, float* B, float* C, int M, int N, int K)
+__global__ void gemm_gpu_o3_kernel(
+    float* A,
+    float* B,
+    float* C,
+    int M,
+    int N,
+    int K)
 {
-	// Init block and grid size
+    __shared__ float tileA[O3_TILE_SIZE][O3_TILE_SIZE];
+    __shared__ float tileB[O3_TILE_SIZE][O3_TILE_SIZE];
+
+    int row = blockIdx.y * O3_TILE_SIZE + threadIdx.y;
+    int col = blockIdx.x * O3_TILE_SIZE + threadIdx.x;
+
+    float sum = 0.0f;
+
+    int numTiles = (K + O3_TILE_SIZE - 1) / O3_TILE_SIZE;
+
+    for (int t = 0; t < numTiles; t++) {
+
+        int aCol = t * O3_TILE_SIZE + threadIdx.x;
+        int bRow = t * O3_TILE_SIZE + threadIdx.y;
+
+        if (row < M && aCol < K) {
+            tileA[threadIdx.y][threadIdx.x] =
+                A[row * K + aCol];
+        } else {
+            tileA[threadIdx.y][threadIdx.x] = 0.0f;
+        }
+
+        if (bRow < K && col < N) {
+            tileB[threadIdx.y][threadIdx.x] =
+                B[bRow * N + col];
+        } else {
+            tileB[threadIdx.y][threadIdx.x] = 0.0f;
+        }
+
+        __syncthreads();
+
+        for (int k = 0; k < O3_TILE_SIZE; k++) {
+            sum += tileA[threadIdx.y][k] *
+                   tileB[k][threadIdx.x];
+        }
+
+        __syncthreads();
+    }
+
+    if (row < M && col < N) {
+        C[row * N + col] = sum;
+    }
+}
+
+void gemm_gpu_o3(
+    float* A,
+    float* B,
+    float* C,
+    int M,
+    int N,
+    int K)
+{
+    dim3 blockSize(O3_TILE_SIZE, O3_TILE_SIZE);
+
+    dim3 gridSize(
+        (N + O3_TILE_SIZE - 1) / O3_TILE_SIZE,
+        (M + O3_TILE_SIZE - 1) / O3_TILE_SIZE
+    );
+
+    gemm_gpu_o3_kernel<<<gridSize, blockSize>>>(
+        A, B, C, M, N, K
+    );
 }
 
 
