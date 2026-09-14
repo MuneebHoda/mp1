@@ -2,6 +2,7 @@
 #include <cuda_runtime.h>
 
 #define NUM_RUNS 10
+#define TILE_SIZE 16
 
 #define CUDA_CHECK(func)                                                     	   \
 	do {                                                                           \
@@ -123,10 +124,49 @@ void gemm_gpu_o1(float* A, float* B, float* C, int M, int N, int K)
 }
 
 __global__ void gemm_gpu_o2_kernel(float* A, float* B, float *C, int M, int N, int K) {
+	__shared__ float tileA[TILE_SIZE][TILE_SIZE];
+	__shared__ float tileB[TILE_SIZE][TILE_SIZE];
+
+	int row = blockIdx.y * TILE_SIZE + threadIdx.y;
+	int col = blockIdx.x * TILE_SIZE + threadIdx.x;
+
+	float sum = 0.0f;
+
+	int numTiles = (K + TILE_SIZE - 1) / TILE_SIZE;
+
+	for(int t = 0; t < numTiles; t++){
+
+		int aCol = t * TILE_SIZE + threadIdx.x;
+		int bRow = t * TILE_SIZE + threadIdx.y;
+
+		if(row < M && aCol < K){
+			tileA[threadIdx.y][threadIdx.x] = A[row * K + aCol];
+		} else {
+			tileA[threadIdx.y][threadIdx.x] = 0.0f;
+		}
+		if(col < N && bRow < K){
+			tileB[threadIdx.y][threadIdx.x] = B[bRow * N + col];
+		} else {
+			tileB[threadIdx.y][threadIdx.x] = 0.0f;
+		}
+
+		__syncthreads();
+
+		for(int k = 0; k < TILE_SIZE; k++){
+			sum += tileA[threadIdx.y][k] * tileB[k][threadIdx.x];
+		}
+
+		__syncthreads();
+	}
+	if(row < M && col < N){
+		C[row * N + col] = sum;
+	}
 }
 void gemm_gpu_o2(float* A, float* B, float* C, int M, int N, int K)
 {
-	// Init block and grid size
+	dim3 blockSize(TILE_SIZE, TILE_SIZE);
+	dim3 gridSize((N + TILE_SIZE - 1) / TILE_SIZE, (M + TILE_SIZE - 1) / TILE_SIZE);
+	gemm_gpu_o2_kernel<<<gridSize, blockSize>>>(A, B, C, M, N, K);
 }
 
 __global__ void gemm_gpu_o3_kernel(float* A, float* B, float *C, int M, int N, int K) {
