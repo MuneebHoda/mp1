@@ -3,7 +3,7 @@
 
 #define NUM_RUNS 10
 #define TILE_SIZE 16
-#define O3_TILE_SIZE 8
+#define O3_TILE_SIZE 16
 
 #define CUDA_CHECK(func)                                                     	   \
 	do {                                                                           \
