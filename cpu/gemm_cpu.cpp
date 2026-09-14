@@ -1,5 +1,6 @@
 #include <chrono>
 #include "../include/utils.h"
+#include <algorithm>
 
 #define NUM_RUNS 2
 
@@ -45,15 +46,61 @@ void gemm_cpu_o0(float* A, float* B, float *C, int M, int N, int K) {
 // Your optimized implementations go here
 // note that for o4 you don't have to change the code, but just the compiler flags. So, you can use o3's code for that part
 void gemm_cpu_o1(float* A, float* B, float *C, int M, int N, int K) {
-
+	for (int i = 0; i < M; i++) {
+    	for (int k = 0; k < K; k++) {
+      	for (int j = 0; j < N; j++) {
+			C[i * N + j]  += A[i * K + k]  * B[k * N + j];
+      }
+    }
+  }
 }
 
 void gemm_cpu_o2(float* A, float* B, float *C, int M, int N, int K) {
+	const int TILE = 32;
 
+	for(int i = 0; i < M; i++){
+		for(int kk = 0 ; kk < K; kk+= TILE){
+			for(int jj = 0; jj < N; jj += TILE){
+				
+				int k_end = std::min(kk + TILE, K);
+				int j_end = std::min(jj + TILE, N);
+
+				for(int k = kk; k < k_end; k++){
+					float a = A[i * K + k];
+					for(int j = jj; j < j_end; j++){
+						C[i * N + j]  += a * B[k * N + j];
+					}
+				}
+			}
+		}
+	}
 }
 
 void gemm_cpu_o3(float* A, float* B, float *C, int M, int N, int K) {
+    const int TILE = 32;
 
+    #pragma omp parallel for schedule(static)
+    for (int i = 0; i < M; i++) {
+
+        for (int kk = 0; kk < K; kk += TILE) {
+
+            for (int jj = 0; jj < N; jj += TILE) {
+
+                int k_end = std::min(kk + TILE, K);
+                int j_end = std::min(jj + TILE, N);
+
+                for (int k = kk; k < k_end; k++) {
+
+                    for (int j = jj; j < j_end; j++) {
+
+                        C[i * N + j] +=
+                            A[i * K + k] *
+                            B[k * N + j];
+                    }
+                }
+            }
+        }
+    }
 }
 
 
